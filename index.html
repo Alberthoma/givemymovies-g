@@ -162,7 +162,18 @@ a:hover { text-decoration: underline; }
 .barra-busqueda .campo-entrada { padding: 8px 0; font-size: 14.5px; }
 .barra-busqueda .campo-lupa { font-size: 15px; }
 .boton-filtro { padding: 0; width: 38px; height: 38px; flex: 0 0 38px; justify-content: center; border-radius: 11px; }
-.boton-filtro svg { width: 18px; height: 18px; }
+.boton-filtro svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  color: #dbe8f4;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 /* Flecha de volver a la búsqueda (modo resultados) y, en la misma fila, el
    desplegable de orden. */
@@ -1199,13 +1210,8 @@ a.plataforma:hover { border-color: #2ee6a8; transform: translateY(-1px); text-de
           </div>
         </div>
         <button class="boton-cabecera boton-filtro" id="btnFiltros" title="Idioma, plataforma, país, género, año, calificación…" aria-label="Filtros de búsqueda">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true">
-            <line x1="4" y1="6" x2="20" y2="6"></line>
-            <circle cx="9" cy="6" r="2.2" fill="#131c26"></circle>
-            <line x1="4" y1="12" x2="20" y2="12"></line>
-            <circle cx="15" cy="12" r="2.2" fill="#131c26"></circle>
-            <line x1="4" y1="18" x2="20" y2="18"></line>
-            <circle cx="9" cy="18" r="2.2" fill="#131c26"></circle>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M4 5h16l-6.5 7.5V18l-3 1.5v-7z"></path>
           </svg>
         </button>
       </div>
@@ -6700,10 +6706,14 @@ GMM.pwa = (function () {
     var boton = document.getElementById("btnInstalar");
     if (!boton) return;
 
-    /* El navegador avisa cuando la app cumple los requisitos. Hasta
-       entonces el botón no se enseña, para no prometer lo que no hay.
-       Safari en iPhone nunca dispara esto: allí se instala desde
-       Compartir → Añadir a pantalla de inicio. */
+    /* Algunos navegadores no disparan beforeinstallprompt aunque la app
+       sea instalable. Por eso la opción se mantiene visible en la web y,
+       si no hay invitación automática, explica el camino manual. */
+    var instalada = window.matchMedia &&
+      window.matchMedia("(display-mode: standalone)").matches;
+    if (navigator.standalone === true) instalada = true;
+    if (seguro() && !instalada) boton.classList.remove("oculto");
+
     window.addEventListener("beforeinstallprompt", function (evento) {
       evento.preventDefault();
       invitacion = evento;
@@ -6711,7 +6721,14 @@ GMM.pwa = (function () {
     });
 
     boton.addEventListener("click", function () {
-      if (!invitacion) return;
+      if (!invitacion) {
+        var esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+        GMM.ui.aviso(esIOS
+          ? "Para instalar: toca Compartir y luego Añadir a pantalla de inicio."
+          : "Para instalar: abre el menú del navegador y elige Instalar givemymovies o Instalar aplicación.",
+          "info");
+        return;
+      }
       invitacion.prompt();
       invitacion.userChoice.then(function (resultado) {
         if (resultado.outcome === "accepted") {
