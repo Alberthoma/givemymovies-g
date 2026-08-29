@@ -146,6 +146,14 @@ a:hover { text-decoration: underline; }
 /* Barra bajo el header: Mis listas y, a su derecha, instalar y ajustes. */
 .barra-listas { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin: 2px 0 10px; }
 .barra-izq, .barra-der { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.barra-izq { flex: 1 1 100%; min-width: 0; }
+.acciones-app {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
 /* El interruptor peli/serie vive ahora en esta barra: sin el margen centrado
    y un punto más compacto para alinear con los botones. */
 .barra-listas .tipo-switch { margin: 0; }
@@ -1077,7 +1085,7 @@ a.plataforma:hover { border-color: #2ee6a8; transform: translateY(-1px); text-de
     gap: 8px;
     margin: 2px 0 10px;
   }
-  .barra-listas, .barra-izq, .barra-der { display: contents; }
+  .barra-listas, .barra-izq, .barra-der, .acciones-app { display: contents; }
   #barraBusqueda { grid-area: buscar; max-width: none; min-width: 0; }
   .barra-volver { grid-area: volver; margin: 0; justify-self: start; }
   #btnListas { grid-area: listas; justify-self: start; }
@@ -1220,14 +1228,14 @@ a.plataforma:hover { border-color: #2ee6a8; transform: translateY(-1px); text-de
         <button class="tipo-op activa" data-tipo="movie">Películas</button>
         <button class="tipo-op" data-tipo="tv">Series</button>
       </div>
-      <button class="boton-cabecera" id="btnAjustes" title="Ajustes y clave de TMDB">
-        <span aria-hidden="true">&#9881;</span>
-      </button>
-    </div>
-    <div class="barra-der">
-      <button class="boton-cabecera oculto" id="btnInstalar" title="Instalar la app en este dispositivo">
-        <span aria-hidden="true">&#11015;</span> Instalar
-      </button>
+      <div class="acciones-app">
+        <button class="boton-cabecera oculto" id="btnInstalar" title="Instalar la app en este dispositivo">
+          <span aria-hidden="true">&#11015;</span> Instalar
+        </button>
+        <button class="boton-cabecera" id="btnAjustes" title="Ajustes y clave de TMDB">
+          <span aria-hidden="true">&#9881;</span>
+        </button>
+      </div>
     </div>
   </div>
 
