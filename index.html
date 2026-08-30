@@ -5113,9 +5113,12 @@ GMM.app = (function () {
     $("tituloReproductor").textContent = item.tituloDetectado || item.nombreArchivo || "Reproducir";
     $("cuerpoReproductor").innerHTML =
       '<div id="estadoReproductor"><div class="estado"><div class="estado-txt">Preparando reproducción segura…</div></div></div>' +
-      '<p class="modal-nota" style="margin-top:12px">¿No quieres esperar? ' +
-      '<button type="button" class="enlace-servidor" data-gmm-externo="' + GMM.util.esc(item.id) + '">Abre el archivo tal cual en VLC u otro reproductor</button>. ' +
-      'A diferencia del navegador, la mayoría de reproductores leen MKV sin necesidad de convertir nada.</p>';
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">' +
+        '<button type="button" class="boton-sec acento" data-gmm-vlc="' + GMM.util.esc(item.id) + '">&#9654; Abrir en VLC</button>' +
+        '<button type="button" class="boton-sec" data-gmm-copiar="' + GMM.util.esc(item.id) + '">&#128279; Copiar enlace</button>' +
+      '</div>' +
+      '<p class="modal-nota" style="margin-top:10px">VLC reproduce el archivo original sin esperar conversión. ' +
+      'Si el navegador no permite abrirlo, usa Copiar enlace.</p>';
     $("capaReproductor").classList.remove("oculto");
 
     function intentar(numero) {
@@ -5154,10 +5157,30 @@ GMM.app = (function () {
     intentar(0);
   }
 
-  /* Copia (o, si el navegador no deja, muestra para copiar a mano) el enlace directo al
-     archivo original, sin conversión: para pegarlo en VLC ("Abrir ubicación de red…"), el
-     reproductor del móvil o una TV. */
-  function abrirEnOtroReproductor(id) {
+  /* Pide el enlace temporal del original y lo entrega al protocolo local que
+     registra GMM-Server.exe. La ventana se abre durante el clic para que los
+     bloqueadores de ventanas emergentes no descarten la acción mientras llega
+     la respuesta del servidor. */
+  function abrirEnVlc(id) {
+    var lanzador = window.open("about:blank", "_blank");
+    GMM.servidor.enlaceOriginal(id).then(function (url) {
+      var protocolo = "gmm-vlc://abrir?url=" + encodeURIComponent(url);
+      if (lanzador) {
+        lanzador.location.href = protocolo;
+        setTimeout(function () { try { lanzador.close(); } catch (e) {} }, 1800);
+      } else {
+        window.location.href = protocolo;
+      }
+      GMM.ui.aviso("Abriendo la película en VLC…", "ok");
+    }).catch(function (error) {
+      if (lanzador) lanzador.close();
+      GMM.ui.aviso(textoErrorServidor(error), "error");
+    });
+  }
+
+  /* Copia (o muestra para copiar a mano) el enlace directo al archivo
+     original, sin conversión, como alternativa universal. */
+  function copiarEnlaceReproductor(id) {
     GMM.servidor.enlaceOriginal(id).then(function (url) {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url).then(function () {
@@ -6077,9 +6100,10 @@ GMM.app = (function () {
     /* --- reproductor de GMM Server: el modal vive fuera de #resultados, así que necesita
        su propio delegado para el botón "abrir en otro reproductor" --- */
     $("cuerpoReproductor").addEventListener("click", function (e) {
-      var nodo = e.target.closest("[data-gmm-externo]");
-      if (!nodo) return;
-      abrirEnOtroReproductor(nodo.getAttribute("data-gmm-externo"));
+      var nodo = e.target.closest("[data-gmm-vlc]");
+      if (nodo) { abrirEnVlc(nodo.getAttribute("data-gmm-vlc")); return; }
+      nodo = e.target.closest("[data-gmm-copiar]");
+      if (nodo) copiarEnlaceReproductor(nodo.getAttribute("data-gmm-copiar"));
     });
 
     /* --- botón buscar y filtros --- */

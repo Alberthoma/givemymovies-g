@@ -57,6 +57,65 @@ Add-Type -Name Consola -Namespace GmmServer -MemberDefinition '
 '
 $ventanaConsola = [GmmServer.Consola]::GetConsoleWindow()
 if ($ventanaConsola -ne [IntPtr]::Zero) { [GmmServer.Consola]::ShowWindow($ventanaConsola, 0) | Out-Null }
+$script:argumentosInicio = @($args)
+
+# Registra un protocolo privado del usuario actual para que GiveMyMovies pueda
+# entregar a VLC un enlace temporal con un clic. No requiere administrador y
+# solo acepta direcciones http/https; nunca ejecuta texto recibido como comando.
+function Buscar-Vlc {
+    $rutas = @(
+        (Join-Path $env:ProgramFiles "VideoLAN\VLC\vlc.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "VideoLAN\VLC\vlc.exe")
+    )
+    foreach ($ruta in $rutas) { if ($ruta -and (Test-Path -LiteralPath $ruta)) { return $ruta } }
+    $comando = Get-Command vlc.exe -ErrorAction SilentlyContinue
+    if ($comando) { return $comando.Source }
+    return $null
+}
+
+function Registrar-ProtocoloGmmVlc {
+    $ejecutable = [System.Environment]::GetCommandLineArgs()[0]
+    if (-not $ejecutable -or [System.IO.Path]::GetFileName($ejecutable) -ine "GMM-Server.exe") { return }
+    $base = "HKCU:\Software\Classes\gmm-vlc"
+    New-Item -Path $base -Force | Out-Null
+    Set-Item -Path $base -Value "URL:GMM VLC Protocol"
+    New-ItemProperty -Path $base -Name "URL Protocol" -Value "" -PropertyType String -Force | Out-Null
+    $comando = New-Item -Path (Join-Path $base "shell\open\command") -Force
+    Set-Item -Path $comando.PSPath -Value ('"' + $ejecutable + '" "%1"')
+}
+
+function Intentar-AbrirProtocoloGmmVlc {
+    if (-not $script:argumentosInicio -or $script:argumentosInicio.Count -lt 1) { return $false }
+    $texto = [string]$script:argumentosInicio[0]
+    if (-not $texto.StartsWith("gmm-vlc://", [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+    try {
+        $uri = New-Object System.Uri($texto)
+        $valor = $null
+        foreach ($parte in $uri.Query.TrimStart('?').Split('&')) {
+            $par = $parte.Split('=', 2)
+            if ($par.Count -eq 2 -and $par[0] -eq "url") {
+                $valor = [System.Uri]::UnescapeDataString($par[1])
+                break
+            }
+        }
+        $destino = $null
+        if (-not $valor -or -not [System.Uri]::TryCreate($valor, [System.UriKind]::Absolute, [ref]$destino) -or
+            ($destino.Scheme -ne "http" -and $destino.Scheme -ne "https")) {
+            throw "El enlace recibido no es una dirección web válida."
+        }
+        $vlc = Buscar-Vlc
+        if (-not $vlc) { throw "No encuentro VLC instalado en este equipo." }
+        Start-Process -FilePath $vlc -ArgumentList ('"' + $destino.AbsoluteUri.Replace('"', '%22') + '"')
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "No se pudo abrir la película en VLC.`n`n$($_.Exception.Message)",
+            "GMM Server", "OK", "Warning") | Out-Null
+    }
+    return $true
+}
+
+Registrar-ProtocoloGmmVlc
+if (Intentar-AbrirProtocoloGmmVlc) { [System.Environment]::Exit(0) }
 
 # Solo una copia de la app a la vez: si ya hay una abierta (visible o en la
 # bandeja) y el usuario vuelve a hacer doble clic en el lanzador sin darse
