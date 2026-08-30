@@ -773,6 +773,16 @@ a.plataforma:hover { border-color: #2ee6a8; transform: translateY(-1px); text-de
   border-color: rgba(74, 168, 255, 0.5); color: #8fc9ff;
 }
 .btn-vermas:hover { border-color: #4aa8ff; background: rgba(74, 168, 255, 0.1); }
+.carrusel-crear {
+  display: flex; justify-content: center; padding: 6px 0 2px;
+}
+.btn-crear-carrusel {
+  width: 46px; height: 46px; border-radius: 999px; font-size: 27px; line-height: 1;
+  border: 1px dashed #4aa8ff; background: rgba(74,168,255,.08); color: #8fc9ff;
+}
+.btn-crear-carrusel:hover { background: rgba(74,168,255,.16); border-color: #2ee6a8; color: #6ff0c4; }
+.btn-borrar-carrusel { border: 0; background: transparent; color: #6f8294; font-size: 18px; padding: 4px; }
+.btn-borrar-carrusel:hover { color: #ff8f8f; }
 
 /* --- rejilla de pósters --- */
 .rejilla { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); }
@@ -1211,7 +1221,8 @@ a.plataforma:hover { border-color: #2ee6a8; transform: translateY(-1px); text-de
         <div class="campo" id="campoTexto">
           <div class="campo-caja">
             <span class="campo-lupa" aria-hidden="true">&#128269;</span>
-            <input class="campo-entrada" id="entrada" type="text" autocomplete="off"
+            <input class="campo-entrada" id="entrada" name="gmm_busqueda_publica" type="search" autocomplete="one-time-code"
+                   data-lpignore="true" data-1p-ignore="true" data-form-type="other"
                    spellcheck="false" placeholder="Ej. Interestelar, El Padrino, Parásitos…"
                    aria-label="Buscar una película o serie">
             <button class="campo-limpiar oculto" id="btnLimpiar" title="Limpiar">&#10005;</button>
@@ -1300,7 +1311,7 @@ a.plataforma:hover { border-color: #2ee6a8; transform: translateY(-1px); text-de
   <footer class="pie">
     <span>givemymovies · datos de disponibilidad vía TMDB / JustWatch</span>
     <span>Tus listas se guardan en este navegador — inicia sesión para llevarlas a otros</span>
-    <span id="version-app">V GMM 0048</span>
+    <span id="version-app">V GMM 0049</span>
   </footer>
 </div>
 
@@ -1641,6 +1652,7 @@ GMM.config = {
   CLAVE_API:        "gmm_tmdb_key",
   CLAVE_OMDB:       "gmm_omdb_key",
   CLAVE_PREFS:      "gmm_prefs",
+  CLAVE_CARRUSELES: "gmm_carruseles",
   CLAVE_LISTAS:     "gmm_listas",
   CLAVE_BIBLIOTECA: "gmm_biblioteca",
   CLAVE_GDRIVE_ID:  "gmm_gdrive_client_id",
@@ -1734,11 +1746,7 @@ GMM.config = {
   TOP_CATEGORIA: 20,
   TENDENCIA_VENTANA: "week",
   CATEGORIAS_SUGERENCIA: [
-    { clave: "tendencia", etiqueta: "Tendencia" },
-    { clave: "siempre",   etiqueta: "Las 20 de siempre", anoDesde: 2000 },
-    { clave: "tarde",     etiqueta: "Nunca es tarde",     anoDesde: 1980, anoHasta: 2000 },
-    { clave: "clasicos",  etiqueta: "Clásicos",           anoDesde: 1950, anoHasta: 1979 },
-    { clave: "favoritas", etiqueta: "Lo que prefieres" }
+    { clave: "tendencia", etiqueta: "Tendencia" }
   ],
 
   /* Tipos de oferta que devuelve TMDB, en orden de interés para el usuario. */
@@ -4237,6 +4245,7 @@ GMM.app = (function () {
     catalogoServidor: null,
     servidorPorId: {},
     servidorIndice: null, // { porId, porTitulo } — para la insignia "Te la tengo" de las sugerencias
+    entradasServidor: null,
     marcada: -1,          // sugerencia resaltada con el teclado
     /* Método Descubrir */
     genero: "",           // id de género de TMDB
@@ -4257,6 +4266,8 @@ GMM.app = (function () {
      Ya no hay "categoría activa" en el estado: desde V GMM 0023 los cinco
      carruseles están a la vista y cada uno se carga por su cuenta. */
   var cacheCarrusel = {};
+  var carruselesUsuario = [];
+  var creandoCarrusel = false;
 
   /* Clave para marcadores y ejemplos: el título depende del interruptor. */
   function claveBusqueda() {
@@ -4302,6 +4313,12 @@ GMM.app = (function () {
     /* "nota" no es un orden por sí solo: vive aparte, en porNota. */
     if (p.orden !== "nota" && GMM.config.ORDENES[p.orden]) estado.orden = p.orden;
     estado.porNota = p.porNota === true;
+    carruselesUsuario = GMM.util.leerJSON(GMM.config.CLAVE_CARRUSELES, []);
+    if (!Array.isArray(carruselesUsuario)) carruselesUsuario = [];
+  }
+
+  function guardarCarruseles() {
+    GMM.util.guardarJSON(GMM.config.CLAVE_CARRUSELES, carruselesUsuario);
   }
 
   function guardarPrefs() {
@@ -5278,6 +5295,7 @@ GMM.app = (function () {
     }
     GMM.servidor.escanear().then(function (catalogo) {
       estado.catalogoServidor = catalogo;
+      estado.entradasServidor = null;
       indexarCatalogoServidor(catalogo);
       GMM.ui.refrescarCabecera();
       if (estado.vista === "servidor") pintarServidor();
@@ -5309,20 +5327,38 @@ GMM.app = (function () {
       estado.catalogoServidor = catalogo;
       indexarCatalogoServidor(catalogo);   // también rellena estado.servidorPorId
       GMM.ui.refrescarCabecera();
-      return enriquecerServidor(catalogo.peliculas || []).then(function (entradas) {
+      var obtenerEntradas = estado.entradasServidor
+        ? Promise.resolve(estado.entradasServidor)
+        : enriquecerServidor(catalogo.peliculas || []).then(function (entradas) {
+            estado.entradasServidor = entradas;
+            return entradas;
+          });
+      return obtenerEntradas.then(function (entradas) {
         if (estado.vista !== "servidor") return;
+        var todas = entradas;
+        entradas = entradas.filter(function (entrada) {
+          var ficha = entrada.ficha || {};
+          var generos = (ficha.genre_ids || []).map(String);
+          if (ficha.genres) generos = generos.concat(ficha.genres.map(function (g) { return String(g.id); }));
+          if (estado.genero && !GMM.datos.esColeccion(estado.genero) && generos.indexOf(String(estado.genero)) === -1) return false;
+          if (estado.notaMin && Number(ficha.vote_average || 0) < Number(estado.notaMin)) return false;
+          var ano = Number(GMM.util.ano(ficha.release_date || ficha.first_air_date) || entrada.item.anioDetectado || 0);
+          if (estado.anoDesde && ano < Number(estado.anoDesde)) return false;
+          if (estado.anoHasta && ano > Number(estado.anoHasta)) return false;
+          return true;
+        });
         var disponibles = catalogo.resumen && Number(catalogo.resumen.disponibles) || 0;
         var copiandose = catalogo.resumen && Number(catalogo.resumen.copiandose) || 0;
         var nota = disponibles + " disponible" + (disponibles === 1 ? "" : "s") +
           (copiandose ? " · " + copiandose + " terminando de copiar" : "") + ".";
         var html = '<div class="seccion-cab"><h3 class="seccion-tit">&#9654; Te la tengo <small>' +
-          (catalogo.resumen ? Number(catalogo.resumen.total) || 0 : entradas.length) + '</small></h3>' +
+          entradas.length + (entradas.length !== todas.length ? ' de ' + todas.length : '') + '</small></h3>' +
           '<button class="boton-sec" data-refrescar-servidor>&#8635; Actualizar</button></div>' +
           '<p class="estado-txt" style="margin:-6px 0 18px">' + GMM.util.esc(nota) +
           (GMM.tmdb.hayClave() ? " Carátulas e información de TMDB." : " Añade tu clave de TMDB en ⚙ para carátulas e información completas.") +
           '</p>';
         html += entradas.length ? '<div class="rejilla">' + entradas.map(tarjetaServidor).join("") + '</div>' :
-          '<div class="estado"><div class="estado-tit">Tu catálogo está vacío</div><p class="estado-txt">Ejecuta un escaneo en GMM Server y vuelve a actualizar.</p></div>';
+          '<div class="estado"><div class="estado-tit">No hay títulos con estos filtros</div><p class="estado-txt">Prueba a cambiar género, idioma, año o puntuación desde el botón de filtros.</p></div>';
         $("resultados").innerHTML = html;
       });
     }).catch(function (error) {
@@ -5859,7 +5895,7 @@ GMM.app = (function () {
       cerrarSugerencias();
       reflejar();
       guardarPrefs();
-      if (estado.vista === "inicio") refrescarCarrusel();  // el carrusel respeta el tipo
+      if (estado.vista === "inicio") { montarCarruseles(); refrescarCarrusel(); }
       relanzarSiProcede();      // si ya había resultados, rehace la búsqueda con el nuevo tipo
     });
 
@@ -5873,6 +5909,20 @@ GMM.app = (function () {
        alcanza aquí (esto vive en otra sección), así que necesita la suya. */
     $("descubrimiento").addEventListener("click", function (e) {
       var nodo;
+      if (e.target.closest("[data-crear-carrusel]")) {
+        modoFormularioCarrusel(true);
+        abrirCapa("capaFormulario");
+        return;
+      }
+      if ((nodo = e.target.closest("[data-borrar-carrusel]"))) {
+        var borrar = nodo.getAttribute("data-borrar-carrusel");
+        carruselesUsuario = carruselesUsuario.filter(function (def) { return def.clave !== borrar; });
+        guardarCarruseles();
+        delete cacheCarrusel[estado.tipo + ":" + borrar];
+        montarCarruseles();
+        refrescarCarrusel();
+        return;
+      }
       if ((nodo = e.target.closest("[data-mover]"))) {
         var bloque = nodo.closest("[data-cat]");
         if (bloque) desplazarCarrusel(bloque.getAttribute("data-cat"), Number(nodo.getAttribute("data-mover")));
@@ -5896,6 +5946,7 @@ GMM.app = (function () {
     /* --- icono de filtro: abre el panel de idioma/plataforma/país/género/
        año/calificación y el modo actor/trama --- */
     $("btnFiltros").addEventListener("click", function () {
+      modoFormularioCarrusel(false);
       abrirCapa("capaFormulario");
     });
 
@@ -5921,6 +5972,7 @@ GMM.app = (function () {
     function alCambiarCriterio() {
       guardarPrefs();
       if (estado.vista === "rejilla") hacerDescubrir();
+      else if (estado.vista === "servidor") pintarServidor();
     }
 
     $("selGenero").addEventListener("change", function () {
@@ -6111,7 +6163,9 @@ GMM.app = (function () {
     });
 
     /* --- botón buscar y filtros --- */
-    $("btnBuscar").addEventListener("click", buscar);
+    $("btnBuscar").addEventListener("click", function () {
+      if (creandoCarrusel) crearCarrusel(); else buscar();
+    });
 
     $("selPlataforma").addEventListener("change", function () {
       estado.plataforma = this.value; guardarPrefs(); repintarVista();
@@ -6515,7 +6569,7 @@ GMM.app = (function () {
      propia categoría, no un estado global de "categoría activa". */
 
   function categoriaDef(clave) {
-    var lista = GMM.config.CATEGORIAS_SUGERENCIA, i;
+    var lista = GMM.config.CATEGORIAS_SUGERENCIA.concat(carruselesUsuario), i;
     for (i = 0; i < lista.length; i++) if (lista[i].clave === clave) return lista[i];
     return lista[0];
   }
@@ -6538,9 +6592,16 @@ GMM.app = (function () {
      carrusel. La nota que ordena la lista es la que luce cada tarjeta. */
   function cargarRanking(def) {
     var opciones = { anoDesde: def.anoDesde, anoHasta: def.anoHasta,
-                     notaMin: GMM.config.NOTA_MIN_CATEGORIA, porNota: true };
-    return GMM.tmdb.descubrir(estado.tipo, opciones, 1).then(function (res) {
-      return GMM.util.mejoresPorNota(res.items || [], GMM.config.TOP_CATEGORIA);
+                     genero: def.genero || "", notaMin: def.notaMin || "", orden: "popular", porNota: false };
+    return GMM.tmdb.descubrir(estado.tipo, opciones, 1).then(function (primera) {
+      var pagina = primera.total > 1 ? 1 + Math.floor(Math.random() * Math.min(primera.total, 25)) : 1;
+      return pagina === 1 ? primera : GMM.tmdb.descubrir(estado.tipo, opciones, pagina);
+    }).then(function (res) {
+      var items = (res.items || []).slice();
+      for (var i = items.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1)), tmp = items[i]; items[i] = items[j]; items[j] = tmp;
+      }
+      return items.slice(0, GMM.config.TOP_CATEGORIA);
     });
   }
 
@@ -6550,21 +6611,10 @@ GMM.app = (function () {
     if (clave === "tendencia") {
       return GMM.tmdb.tendencia(estado.tipo).then(function (l) { return conNota(l.slice(0, tope)); });
     }
-    if (clave === "favoritas") {
-      var favs = GMM.listas.obtener("favoritas").filter(function (f) {
-        return (f.tipo || "movie") === estado.tipo;
-      });
-      return Promise.resolve(conNota(favs.slice(0, tope)));
-    }
     return cargarRanking(categoriaDef(clave)).then(conNota);
   }
 
   function vacioDe(clave) {
-    if (clave === "favoritas") {
-      return estado.tipo === "tv"
-        ? "Aún no tienes series favoritas. Marca la estrella en cualquier ficha."
-        : "Aún no tienes películas favoritas. Marca la estrella en cualquier ficha.";
-    }
     return "No hay títulos para esta categoría.";
   }
 
@@ -6589,13 +6639,13 @@ GMM.app = (function () {
   /* Monta los cinco bloques a partir del config: cabecera con título, su "Ver
      más" si la categoría tiene intervalo de años, las dos flechas y la pista. */
   function montarCarruseles() {
-    $("descubrimiento").innerHTML = GMM.config.CATEGORIAS_SUGERENCIA.map(function (def) {
+    var defs = GMM.config.CATEGORIAS_SUGERENCIA.concat(carruselesUsuario.filter(function (def) { return !def.tipo || def.tipo === estado.tipo; }));
+    $("descubrimiento").innerHTML = defs.map(function (def) {
       return '<div class="carrusel-bloque" data-cat="' + def.clave + '">' +
         '<div class="carrusel-cab">' +
           '<h2 class="carrusel-tit">' + GMM.util.esc(def.etiqueta) + '</h2>' +
-          (def.anoDesde
-            ? '<button class="boton-sec btn-vermas" data-vermas="' + def.clave + '">Ver m&aacute;s &#8594;</button>'
-            : "") +
+          (def.clave !== "tendencia" ? '<button class="boton-sec btn-vermas" data-vermas="' + def.clave + '">Ver m&aacute;s &#8594;</button>' : "") +
+          (def.usuario ? '<button class="btn-borrar-carrusel" data-borrar-carrusel="' + def.clave + '" title="Eliminar carrusel" aria-label="Eliminar carrusel">&#10005;</button>' : '') +
           '<div class="carrusel-flechas">' +
             '<button class="carrusel-flecha" data-mover="-1" aria-label="Anterior" title="Anterior">&#8249;</button>' +
             '<button class="carrusel-flecha" data-mover="1" aria-label="Siguiente" title="Siguiente">&#8250;</button>' +
@@ -6603,7 +6653,7 @@ GMM.app = (function () {
         '</div>' +
         '<div class="carrusel" id="carrusel-' + def.clave + '"></div>' +
       '</div>';
-    }).join("");
+    }).join("") + '<div class="carrusel-crear"><button class="btn-crear-carrusel" data-crear-carrusel title="Crear carrusel con filtros" aria-label="Crear carrusel">+</button></div>';
   }
 
   function cargarCarrusel(clave) {
@@ -6621,10 +6671,37 @@ GMM.app = (function () {
     });
   }
 
+  function modoFormularioCarrusel(activo) {
+    creandoCarrusel = activo;
+    $("panelBuscar").classList.toggle("oculto", activo);
+    $("filtros").classList.toggle("oculto", activo);
+    $("chips").classList.toggle("oculto", activo);
+    $("orden").classList.toggle("oculto", activo);
+    $("tituloFormulario").textContent = activo ? "Crear carrusel" : (estado.tipo === "tv" ? "Filtros — series" : "Filtros — películas");
+    $("formularioSub").textContent = activo ? "Elige género, puntuación y, si quieres, un intervalo de años." : "Idioma, plataforma, país, género, año, calificación — y buscar por actor o trama.";
+    $("btnBuscar").textContent = activo ? "Crear carrusel" : "Buscar";
+  }
+
+  function crearCarrusel() {
+    var partes = [], nombreGenero = generoNombre(estado.tipo, estado.genero);
+    if (nombreGenero) partes.push(nombreGenero);
+    if (estado.notaMin) partes.push("nota " + estado.notaMin + "+");
+    if (estado.anoDesde || estado.anoHasta) partes.push(estado.anoDesde && estado.anoHasta ? estado.anoDesde + "–" + estado.anoHasta : (estado.anoDesde ? "desde " + estado.anoDesde : "hasta " + estado.anoHasta));
+    if (!partes.length) { GMM.ui.aviso("Elige al menos un filtro para el carrusel", "info"); return; }
+    carruselesUsuario.push({
+      clave: "personal-" + Date.now(), usuario: true,
+      etiqueta: (estado.tipo === "tv" ? "Series: " : "Películas: ") + partes.join(" · "),
+      tipo: estado.tipo, genero: estado.genero, notaMin: estado.notaMin,
+      anoDesde: estado.anoDesde, anoHasta: estado.anoHasta
+    });
+    guardarCarruseles(); cerrarCapa("capaFormulario"); modoFormularioCarrusel(false);
+    montarCarruseles(); refrescarCarrusel(); GMM.ui.aviso("Carrusel creado", "ok");
+  }
+
   /* Recarga los cinco (p. ej. al cambiar el interruptor peli/serie). Van en
      paralelo a propósito: cada uno pinta en cuanto llega, sin esperar al resto. */
   function refrescarCarrusel() {
-    GMM.config.CATEGORIAS_SUGERENCIA.forEach(function (def) { cargarCarrusel(def.clave); });
+    GMM.config.CATEGORIAS_SUGERENCIA.concat(carruselesUsuario.filter(function (def) { return !def.tipo || def.tipo === estado.tipo; })).forEach(function (def) { cargarCarrusel(def.clave); });
   }
 
   /* Desplaza un carrusel un paso. Es "infinito": al llegar a un extremo, la
@@ -6654,18 +6731,18 @@ GMM.app = (function () {
      cuando se pide a mano desde el desplegable de orden. */
   function verMasCategoria(clave) {
     var def = categoriaDef(clave);
-    if (!def.anoDesde) return;
+    if (clave === "tendencia") return;
     estado.metodo = "descubrir";
-    estado.genero = "";
-    estado.anoDesde = String(def.anoDesde);
-    estado.anoHasta = String(def.anoHasta || new Date().getFullYear());
-    estado.notaMin = String(GMM.config.NOTA_MIN_CATEGORIA);   // 6 o más
-    estado.orden = "antigua";                        // del más antiguo
+    estado.genero = def.genero || "";
+    estado.anoDesde = def.anoDesde || "";
+    estado.anoHasta = def.anoHasta || "";
+    estado.notaMin = def.notaMin || "";
+    estado.orden = "popular";
     estado.porNota = false;
     reflejar();
     /* reflejar() no toca los selects de Descubrir (los llenan las montar*), así
        que los ponemos a mano para que el formulario refleje lo que se busca. */
-    $("selGenero").value = "";
+    $("selGenero").value = estado.genero;
     $("selAnoDesde").value = estado.anoDesde;
     $("selAnoHasta").value = estado.anoHasta;
     $("selNota").value = estado.notaMin;
@@ -6710,6 +6787,17 @@ GMM.app = (function () {
 
   function iniciar() {
     cargarPrefs();
+    /* Algunos gestores de contraseñas confunden el buscador con el correo del
+       acceso. Nunca conservamos ese autocompletado en el campo público. */
+    $("entrada").value = "";
+    [250, 800, 1600].forEach(function (espera) {
+      setTimeout(function () {
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test($("entrada").value.trim())) {
+          $("entrada").value = "";
+          $("btnLimpiar").classList.add("oculto");
+        }
+      }, espera);
+    });
 
     /* Si volvemos del login de Google, el token viene en el hash: lo guardamos
        y limpiamos la URL antes de pintar nada. */

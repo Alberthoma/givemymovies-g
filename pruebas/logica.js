@@ -537,11 +537,11 @@ m.afirmar("lista vacía o sin notas devuelve vacío",
 /* ---------------------------------------------------------------- */
 m.titulo("Carruseles: uno por categoría (V GMM 0023)");
 
-m.afirmar("hay cinco categorías en el config",
-  GMM.config.CATEGORIAS_SUGERENCIA.length === 5);
+m.afirmar("Tendencia es el único carrusel fijo",
+  GMM.config.CATEGORIAS_SUGERENCIA.length === 1 && GMM.config.CATEGORIAS_SUGERENCIA[0].clave === "tendencia");
 m.afirmar("veinte títulos por carrusel", GMM.config.TOP_CATEGORIA === 20);
-m.afirmar("tres categorías tienen intervalo (las que llevan «Ver más»)",
-  GMM.config.CATEGORIAS_SUGERENCIA.filter((c) => c.anoDesde).length === 3);
+m.afirmar("los demás carruseles se crean con filtros y no están fijados en config",
+  GMM.config.CATEGORIAS_SUGERENCIA.filter((c) => c.anoDesde).length === 0);
 m.afirmar("el umbral de nota de las categorías es 6",
   GMM.config.NOTA_MIN_CATEGORIA === 6);
 
