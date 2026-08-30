@@ -3486,12 +3486,14 @@ GMM.servidor = (function () {
   function conectado() { return !!configuracion().url; }
   function total() { return ultimoCatalogo && ultimoCatalogo.resumen ? Number(ultimoCatalogo.resumen.total) || 0 : 0; }
 
-  function pedir(ruta) {
+  function pedir(ruta, opciones) {
     var actual = configuracion();
     if (!actual.url) return Promise.reject(new Error("SIN_CONFIGURAR"));
     var cabeceras = { Accept: "application/json" };
     if (actual.clave) cabeceras.Authorization = "Bearer " + actual.clave;
-    return fetch(actual.url + ruta, { headers: cabeceras }).then(function (respuesta) {
+    var solicitud = Object.assign({}, opciones || {});
+    solicitud.headers = Object.assign({}, solicitud.headers || {}, cabeceras);
+    return fetch(actual.url + ruta, solicitud).then(function (respuesta) {
       if (respuesta.ok) return respuesta.json();
       if (respuesta.status === 401) throw new Error("CLAVE_INCORRECTA");
       if (respuesta.status === 403) throw new Error("ORIGEN_NO_PERMITIDO");
@@ -3502,6 +3504,13 @@ GMM.servidor = (function () {
 
   function catalogo() {
     return pedir("/api/catalogo").then(function (resultado) {
+      ultimoCatalogo = resultado;
+      return resultado;
+    });
+  }
+
+  function escanear() {
+    return pedir("/api/escanear", { method: "POST" }).then(function (resultado) {
       ultimoCatalogo = resultado;
       return resultado;
     });
@@ -3558,7 +3567,7 @@ GMM.servidor = (function () {
   }
 
   return {
-    catalogo: catalogo, configuracion: configuracion, conectado: conectado,
+    catalogo: catalogo, escanear: escanear, configuracion: configuracion, conectado: conectado,
     enlace: enlace, enlaceOriginal: enlaceOriginal, guardar: guardar,
     normalizarUrl: normalizarUrl, total: total
   };
@@ -5235,6 +5244,26 @@ GMM.app = (function () {
     return GMM.ui.tarjeta(item, extraHtml, enServidor ? iconosServidorHtml(enServidor) : "");
   }
 
+  function actualizarServidor(boton) {
+    if (boton) {
+      boton.disabled = true;
+      boton.textContent = "Escaneando Jellyfin…";
+    }
+    GMM.servidor.escanear().then(function (catalogo) {
+      estado.catalogoServidor = catalogo;
+      indexarCatalogoServidor(catalogo);
+      GMM.ui.refrescarCabecera();
+      if (estado.vista === "servidor") pintarServidor();
+      GMM.ui.aviso("Biblioteca actualizada: " + (catalogo.resumen ? catalogo.resumen.total : 0) + " películas", "info");
+    }).catch(function (error) {
+      if (boton) {
+        boton.disabled = false;
+        boton.innerHTML = "&#8635; Actualizar";
+      }
+      GMM.ui.aviso(textoErrorServidor(error), "error");
+    });
+  }
+
   function pintarServidor() {
     estado.vista = "servidor";
     estado.ctxPagina = null;
@@ -6087,7 +6116,7 @@ GMM.app = (function () {
         descargarServidor(estado.servidorPorId[nodo.getAttribute("data-gmm-descargar")]);
         return;
       }
-      if (e.target.closest("[data-refrescar-servidor]")) { pintarServidor(); return; }
+      if ((nodo = e.target.closest("[data-refrescar-servidor]"))) { actualizarServidor(nodo); return; }
       if (e.target.closest("[data-configurar-servidor]")) { abrirAjustesServidor(); return; }
       if (alPulsarCopia(e)) return;
       if (alPulsarDrive(e)) return;

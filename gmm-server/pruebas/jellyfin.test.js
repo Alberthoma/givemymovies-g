@@ -63,3 +63,33 @@ test("el proxy pide a Jellyfin MP4 H.264/AAC para el navegador", async function 
   assert.match(urlPedida, /audioCodec=aac/);
   assert.equal(cabeceras["content-type"], "video/mp4");
 });
+
+test("Actualizar ordena a Jellyfin escanear y espera antes de leer el catálogo", async function () {
+  const peticiones = [];
+  let consultasTarea = 0;
+  const falsoFetch = async function (url, opciones) {
+    peticiones.push({ url, metodo: opciones && opciones.method || "GET" });
+    if (url.endsWith("/Library/Refresh")) return new Response(null, { status: 204 });
+    if (url.endsWith("/ScheduledTasks")) {
+      consultasTarea += 1;
+      return new Response(JSON.stringify([{ Key: "RefreshLibrary", State: consultasTarea === 1 ? "Running" : "Idle" }]), {
+        status: 200, headers: { "Content-Type": "application/json" }
+      });
+    }
+    if (url.includes("/Items?")) {
+      return new Response(JSON.stringify({ TotalRecordCount: 0, Items: [] }), {
+        status: 200, headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response(null, { status: 404 });
+  };
+  const gestor = new GestorJellyfin({ jellyfin: {
+    url: "http://127.0.0.1:8096", claveApi: "secreto"
+  } }, { fetch: falsoFetch, esperar: async function () {} });
+
+  const catalogo = await gestor.escanearConfirmando();
+  assert.equal(catalogo.resumen.total, 0);
+  assert.deepEqual(peticiones.map(function (p) { return p.metodo + " " + new URL(p.url).pathname; }), [
+    "POST /Library/Refresh", "GET /ScheduledTasks", "GET /ScheduledTasks", "GET /Items"
+  ]);
+});

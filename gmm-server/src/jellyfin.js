@@ -25,6 +25,9 @@ class GestorJellyfin {
     this.base = limpiarBase(configuracion.jellyfin.url);
     this.clave = configuracion.jellyfin.claveApi;
     this.fetch = opciones && opciones.fetch || fetch;
+    this.esperar = opciones && opciones.esperar || function (ms) {
+      return new Promise(function (resolver) { setTimeout(resolver, ms); });
+    };
     this.catalogo = {
       version: 2,
       actualizadoEn: null,
@@ -52,7 +55,30 @@ class GestorJellyfin {
   }
 
   async escanearConfirmando() {
+    await this.pedir("/Library/Refresh", { method: "POST" });
+    await this.esperarEscaneoBiblioteca();
     return this.actualizar();
+  }
+
+  async esperarEscaneoBiblioteca() {
+    /* Jellyfin responde 204 apenas ENCOLA el escaneo. Esperamos a que su tarea
+       RefreshLibrary termine para no devolver a GMM el catálogo anterior. */
+    let vistoEnMarcha = false;
+    for (let intento = 0; intento < 180; intento += 1) {
+      await this.esperar(intento === 0 ? 500 : 1000);
+      const respuesta = await this.pedir("/ScheduledTasks");
+      const tareas = await respuesta.json();
+      const tarea = (tareas || []).find(function (item) {
+        return item.Key === "RefreshLibrary" || /library|biblioteca/i.test(item.Name || "");
+      });
+      if (!tarea) return;
+      if (tarea.State === "Running") {
+        vistoEnMarcha = true;
+        continue;
+      }
+      if (vistoEnMarcha || intento > 0) return;
+    }
+    throw new Error("Jellyfin tardó demasiado en escanear la biblioteca.");
   }
 
   async actualizar() {
