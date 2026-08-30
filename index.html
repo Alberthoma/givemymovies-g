@@ -5823,6 +5823,14 @@ GMM.app = (function () {
         return;
       }
       if ((nodo = e.target.closest("[data-vermas]"))) { verMasCategoria(nodo.getAttribute("data-vermas")); return; }
+      if ((nodo = e.target.closest("[data-gmm-reproducir]"))) {
+        abrirReproductorServidor(estado.servidorPorId[nodo.getAttribute("data-gmm-reproducir")]);
+        return;
+      }
+      if ((nodo = e.target.closest("[data-gmm-descargar]"))) {
+        descargarServidor(estado.servidorPorId[nodo.getAttribute("data-gmm-descargar")]);
+        return;
+      }
       if ((nodo = e.target.closest("[data-lista]"))) { alternarLista(nodo); return; }
       if ((nodo = e.target.closest("[data-abrir]"))) {
         abrirFicha(nodo.getAttribute("data-abrir"), nodo.getAttribute("data-tipo"));
