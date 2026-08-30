@@ -107,6 +107,14 @@ function cargarConfiguracion(rutaSolicitada) {
   const rutaCacheTranscodificacion = path.isAbsolute(rutaCacheConfigurada)
     ? rutaCacheConfigurada
     : path.resolve(basePrivada, rutaCacheConfigurada);
+  const jellyfinUrl = String(datos.jellyfinUrl || "").trim().replace(/\/+$/, "");
+  const jellyfinClaveApi = String(datos.jellyfinClaveApi || "").trim();
+  if ((jellyfinUrl && !jellyfinClaveApi) || (!jellyfinUrl && jellyfinClaveApi)) {
+    throw new Error("jellyfinUrl y jellyfinClaveApi deben configurarse juntos.");
+  }
+  if (jellyfinUrl && !/^https?:\/\//i.test(jellyfinUrl)) {
+    throw new Error("jellyfinUrl debe empezar por http:// o https://.");
+  }
 
   return {
     rutaConfiguracion: ruta,
@@ -141,7 +149,12 @@ function cargarConfiguracion(rutaSolicitada) {
        app sigue funcionando exactamente igual que antes de este añadido. */
     rutaFFmpeg: textoNoVacio(datos.rutaFFmpeg || "ffmpeg", "rutaFFmpeg"),
     rutaFFprobe: textoNoVacio(datos.rutaFFprobe || "ffprobe", "rutaFFprobe"),
-    rutaCacheTranscodificacion
+    rutaCacheTranscodificacion,
+    jellyfin: {
+      activo: Boolean(jellyfinUrl && jellyfinClaveApi),
+      url: jellyfinUrl,
+      claveApi: jellyfinClaveApi
+    }
   };
 }
 

@@ -6,6 +6,7 @@ const { cargarConfiguracion } = require("./src/configuracion");
 const { GestorCatalogo } = require("./src/catalogo");
 const { crearServidorApi, VERSION_SERVIDOR } = require("./src/api");
 const { GestorTranscodificacion } = require("./src/transcodificar");
+const { GestorJellyfin } = require("./src/jellyfin");
 
 function direccionesAlcanzables(host, puerto) {
   if (host !== "0.0.0.0") return [`http://${host}:${puerto}`];
@@ -23,27 +24,33 @@ function direccionesAlcanzables(host, puerto) {
 
 async function iniciar() {
   const configuracion = cargarConfiguracion(process.argv[2]);
-  const gestor = new GestorCatalogo(configuracion);
+  const gestor = configuracion.jellyfin.activo
+    ? new GestorJellyfin(configuracion)
+    : new GestorCatalogo(configuracion);
   await gestor.iniciar();
 
-  if (configuracion.escanearAlIniciar) {
+  if (!configuracion.jellyfin.activo && configuracion.escanearAlIniciar) {
     const catalogo = await gestor.escanearConfirmando();
     console.log(`Catálogo revisado: ${catalogo.resumen.total} película(s).`);
   }
 
-  const transcodificador = new GestorTranscodificacion(configuracion, { registro: console });
+  const transcodificador = configuracion.jellyfin.activo
+    ? null
+    : new GestorTranscodificacion(configuracion, { registro: console });
   const servidor = crearServidorApi(configuracion, gestor, console, transcodificador);
   servidor.listen(configuracion.puerto, configuracion.host, function () {
     console.log(`GMM Server ${VERSION_SERVIDOR} está funcionando.`);
     direccionesAlcanzables(configuracion.host, configuracion.puerto).forEach(function (direccion) {
       console.log(`Dirección: ${direccion}`);
     });
-    console.log(`Carpetas configuradas: ${configuracion.carpetas.length}`);
+    console.log(configuracion.jellyfin.activo
+      ? `Motor multimedia: Jellyfin (${configuracion.jellyfin.url})`
+      : `Carpetas configuradas: ${configuracion.carpetas.length}`);
     console.log("Pulsa Ctrl+C para detenerlo.");
   });
 
   let temporizador = null;
-  if (configuracion.intervaloEscaneoMinutos > 0) {
+  if (!configuracion.jellyfin.activo && configuracion.intervaloEscaneoMinutos > 0) {
     temporizador = setInterval(function () {
       gestor.escanear().catch(function (error) {
         console.error("No se pudo actualizar el catálogo:", error.message);

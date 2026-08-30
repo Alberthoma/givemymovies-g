@@ -6,7 +6,7 @@ const http = require("node:http");
 const { rutaCache } = require("./transcodificar");
 
 const fsPromesas = fs.promises;
-const VERSION_SERVIDOR = "0.2.0";
+const VERSION_SERVIDOR = "0.3.0";
 
 const TIPOS_VIDEO = {
   ".mp4": "video/mp4",
@@ -118,11 +118,11 @@ function crearTickets(configuracion) {
     });
   }
 
-  function emitir(id, descarga, transcodificado) {
+  function emitir(id, descarga, transcodificado, original) {
     limpiar();
     const token = crypto.randomBytes(32).toString("base64url");
     const expiraEn = Date.now() + duracion;
-    tickets.set(token, { id, descarga: Boolean(descarga), transcodificado: Boolean(transcodificado), expiraEn });
+    tickets.set(token, { id, descarga: Boolean(descarga), transcodificado: Boolean(transcodificado), original: Boolean(original), expiraEn });
     return { token, expiraEn };
   }
 
@@ -244,6 +244,17 @@ function crearServidorApi(configuracion, gestorCatalogo, registro, gestorTransco
         }
         const descarga = url.searchParams.get("tipo") === "descarga";
 
+        if (pelicula.origen === "jellyfin") {
+          const esOriginal = url.searchParams.get("tipo") === "original";
+          const ticket = tickets.emitir(id, descarga, false, esOriginal);
+          responderJson(respuesta, 200, {
+            ruta: `/_gmm/medio/${ticket.token}`,
+            expiraEn: new Date(ticket.expiraEn).toISOString(),
+            tipo: descarga ? "descarga" : (esOriginal ? "original" : "reproduccion")
+          });
+          return;
+        }
+
         /* "original": para quien prefiere abrir el archivo tal cual en su propio reproductor
            (VLC, el reproductor del m\u00f3vil, una TV) en vez de esperar la conversi\u00f3n. La mayor\u00eda
            de reproductores de escritorio y m\u00f3vil leen MKV/AC3 sin ayuda; el navegador es el
@@ -310,6 +321,13 @@ function crearServidorApi(configuracion, gestorCatalogo, registro, gestorTransco
         const pelicula = gestorCatalogo.obtenerArchivo && gestorCatalogo.obtenerArchivo(ticket.id);
         if (!pelicula) {
           responderJson(respuesta, 404, { error: "Pel\u00edcula no disponible" });
+          return;
+        }
+        if (pelicula.origen === "jellyfin" && gestorCatalogo.responderMedio) {
+          await gestorCatalogo.responderMedio(solicitud, respuesta, pelicula, {
+            descarga: ticket.descarga,
+            original: ticket.original
+          });
           return;
         }
         if (!ticket.transcodificado) {

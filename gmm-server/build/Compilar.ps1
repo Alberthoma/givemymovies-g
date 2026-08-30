@@ -24,6 +24,8 @@
     Los .exe resultantes quedan en build\salida\.
 #>
 
+param([switch]$SoloServidor)
+
 $ErrorActionPreference = "Stop"
 
 if (Get-Module -ListAvailable -Name ps2exe) {
@@ -49,16 +51,18 @@ New-Item -ItemType Directory -Path $carpetaSalida -Force | Out-Null
 # GMM-Instalar.exe
 # ------------------------------------------------------------------
 
-Write-Output "Compilando GMM-Instalar.exe..."
-Invoke-ps2exe `
-    -inputFile (Join-Path $raizProyecto "GMM-Server-Instalador.ps1") `
-    -outputFile (Join-Path $carpetaSalida "GMM-Instalar.exe") `
-    -noConsole `
-    -x64 `
-    -title "GMM Instalar" `
-    -product "GMM Server" `
-    -description "Instala Node.js, FFmpeg y Tailscale para GMM Server" `
-    -version "1.0.0.0"
+if (-not $SoloServidor) {
+    Write-Output "Compilando GMM-Instalar.exe..."
+    Invoke-ps2exe `
+        -inputFile (Join-Path $raizProyecto "GMM-Server-Instalador.ps1") `
+        -outputFile (Join-Path $carpetaSalida "GMM-Instalar.exe") `
+        -noConsole `
+        -x64 `
+        -title "GMM Instalar" `
+        -product "GMM Server" `
+        -description "Instala Node.js, FFmpeg y Tailscale para GMM Server" `
+        -version "1.0.0.0"
+}
 
 # ------------------------------------------------------------------
 # GMM-Server.exe (con el motor incrustado)
@@ -73,6 +77,7 @@ $motor = @{
     '%LOCALAPPDATA%\GMM-Server\motor\src\catalogo.js'                 = Join-Path $raizProyecto "src\catalogo.js"
     '%LOCALAPPDATA%\GMM-Server\motor\src\compatibilidad.js'           = Join-Path $raizProyecto "src\compatibilidad.js"
     '%LOCALAPPDATA%\GMM-Server\motor\src\configuracion.js'            = Join-Path $raizProyecto "src\configuracion.js"
+    '%LOCALAPPDATA%\GMM-Server\motor\src\jellyfin.js'                = Join-Path $raizProyecto "src\jellyfin.js"
     '%LOCALAPPDATA%\GMM-Server\motor\src\nombres.js'                  = Join-Path $raizProyecto "src\nombres.js"
     '%LOCALAPPDATA%\GMM-Server\motor\src\transcodificar.js'           = Join-Path $raizProyecto "src\transcodificar.js"
 }
