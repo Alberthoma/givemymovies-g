@@ -5114,12 +5114,13 @@ GMM.app = (function () {
     $("cuerpoReproductor").innerHTML =
       '<div id="estadoReproductor"><div class="estado"><div class="estado-txt">Preparando reproducción segura…</div></div></div>' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">' +
-        '<button type="button" class="boton-sec acento" data-gmm-vlc="' + GMM.util.esc(item.id) + '">&#9654; Abrir en VLC</button>' +
-        '<button type="button" class="boton-sec" data-gmm-copiar="' + GMM.util.esc(item.id) + '">&#128279; Copiar enlace</button>' +
+        '<a class="boton-sec acento" style="text-decoration:none" data-gmm-vlc aria-disabled="true">&#8987; Preparando VLC…</a>' +
+        '<button type="button" class="boton-sec" data-gmm-copiar disabled>&#128279; Copiar enlace</button>' +
       '</div>' +
       '<p class="modal-nota" style="margin-top:10px">VLC reproduce el archivo original sin esperar conversión. ' +
       'Si el navegador no permite abrirlo, usa Copiar enlace.</p>';
     $("capaReproductor").classList.remove("oculto");
+    prepararEnlacesExternos(item.id, miToken);
 
     function intentar(numero) {
       if (miToken !== tokenReproductor) return;
@@ -5157,46 +5158,41 @@ GMM.app = (function () {
     intentar(0);
   }
 
-  /* Pide el enlace temporal del original y lo entrega al protocolo local que
-     registra GMM-Server.exe. La ventana se abre durante el clic para que los
-     bloqueadores de ventanas emergentes no descarten la acción mientras llega
-     la respuesta del servidor. */
-  function abrirEnVlc(id) {
-    var lanzador = window.open("about:blank", "_blank");
-    GMM.servidor.enlaceOriginal(id).then(function (url) {
-      var protocolo = "gmm-vlc://abrir?url=" + encodeURIComponent(url);
-      if (lanzador) {
-        lanzador.location.href = protocolo;
-        setTimeout(function () { try { lanzador.close(); } catch (e) {} }, 1800);
-      } else {
-        window.location.href = protocolo;
-      }
-      GMM.ui.aviso("Abriendo la película en VLC…", "ok");
+  /* Firefox solo entrega un protocolo externo a Windows cuando el usuario
+     pulsa un enlace DIRECTO. Por eso preparamos dos enlaces temporales al
+     abrir el modal: uno exclusivo para VLC y otro para Copiar enlace. */
+  function prepararEnlacesExternos(id, token) {
+    Promise.all([GMM.servidor.enlaceOriginal(id), GMM.servidor.enlaceOriginal(id)]).then(function (urls) {
+      if (token !== tokenReproductor) return;
+      var vlc = $("cuerpoReproductor").querySelector("[data-gmm-vlc]");
+      var copiar = $("cuerpoReproductor").querySelector("[data-gmm-copiar]");
+      if (!vlc || !copiar) return;
+      vlc.href = "gmm-vlc://abrir?url=" + encodeURIComponent(urls[0]);
+      vlc.removeAttribute("aria-disabled");
+      vlc.innerHTML = "&#9654; Abrir en VLC";
+      copiar.setAttribute("data-gmm-copiar-url", urls[1]);
+      copiar.disabled = false;
     }).catch(function (error) {
-      if (lanzador) lanzador.close();
-      GMM.ui.aviso(textoErrorServidor(error), "error");
+      if (token === tokenReproductor) GMM.ui.aviso(textoErrorServidor(error), "error");
     });
   }
 
   /* Copia (o muestra para copiar a mano) el enlace directo al archivo
      original, sin conversión, como alternativa universal. */
-  function copiarEnlaceReproductor(id) {
-    GMM.servidor.enlaceOriginal(id).then(function (url) {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(url).then(function () {
-          GMM.ui.aviso(
-            "Enlace copiado. En VLC: Medio → Abrir ubicación de red… (Ctrl+N), pega el enlace y dale a Reproducir.",
-            "ok", 12000
-          );
-        }).catch(function () {
-          window.prompt("Copia este enlace y pégalo en tu reproductor (VLC, etc.):", url);
-        });
-        return;
-      }
-      window.prompt("Copia este enlace y pégalo en tu reproductor (VLC, etc.):", url);
-    }).catch(function (error) {
-      GMM.ui.aviso(textoErrorServidor(error), "error");
-    });
+  function copiarEnlaceReproductor(url) {
+    if (!url) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function () {
+        GMM.ui.aviso(
+          "Enlace copiado. En VLC: Medio → Abrir ubicación de red… (Ctrl+N), pega el enlace y dale a Reproducir.",
+          "ok", 12000
+        );
+      }).catch(function () {
+        window.prompt("Copia este enlace y pégalo en tu reproductor (VLC, etc.):", url);
+      });
+      return;
+    }
+    window.prompt("Copia este enlace y pégalo en tu reproductor (VLC, etc.):", url);
   }
 
   function descargarServidor(item) {
@@ -6101,9 +6097,13 @@ GMM.app = (function () {
        su propio delegado para el botón "abrir en otro reproductor" --- */
     $("cuerpoReproductor").addEventListener("click", function (e) {
       var nodo = e.target.closest("[data-gmm-vlc]");
-      if (nodo) { abrirEnVlc(nodo.getAttribute("data-gmm-vlc")); return; }
+      if (nodo) {
+        if (!nodo.getAttribute("href")) e.preventDefault();
+        else GMM.ui.aviso("Abriendo la película en VLC…", "ok");
+        return;
+      }
       nodo = e.target.closest("[data-gmm-copiar]");
-      if (nodo) copiarEnlaceReproductor(nodo.getAttribute("data-gmm-copiar"));
+      if (nodo) copiarEnlaceReproductor(nodo.getAttribute("data-gmm-copiar-url"));
     });
 
     /* --- botón buscar y filtros --- */
