@@ -3516,6 +3516,10 @@ GMM.servidor = (function () {
     });
   }
 
+  function abrirVlc(id) {
+    return pedir("/api/vlc/" + encodeURIComponent(id), { method: "POST" });
+  }
+
   /* A diferencia de pedir(), necesita distinguir 202 (el servidor está convirtiendo el vídeo
      todavía) de 200 (enlace listo) y de los errores propios de la conversión, así que no
      reutiliza pedir(): ese helper solo sabe de éxito u error, no de un estado intermedio. */
@@ -3567,7 +3571,8 @@ GMM.servidor = (function () {
   }
 
   return {
-    catalogo: catalogo, escanear: escanear, configuracion: configuracion, conectado: conectado,
+    catalogo: catalogo, escanear: escanear, abrirVlc: abrirVlc,
+    configuracion: configuracion, conectado: conectado,
     enlace: enlace, enlaceOriginal: enlaceOriginal, guardar: guardar,
     normalizarUrl: normalizarUrl, total: total
   };
@@ -5114,13 +5119,13 @@ GMM.app = (function () {
     $("cuerpoReproductor").innerHTML =
       '<div id="estadoReproductor"><div class="estado"><div class="estado-txt">Preparando reproducción segura…</div></div></div>' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">' +
-        '<a class="boton-sec acento" style="text-decoration:none" data-gmm-vlc aria-disabled="true">&#8987; Preparando VLC…</a>' +
+        '<button type="button" class="boton-sec acento" data-gmm-vlc="' + GMM.util.esc(item.id) + '">&#9654; Abrir en VLC</button>' +
         '<button type="button" class="boton-sec" data-gmm-copiar disabled>&#128279; Copiar enlace</button>' +
       '</div>' +
       '<p class="modal-nota" style="margin-top:10px">VLC reproduce el archivo original sin esperar conversión. ' +
       'Si el navegador no permite abrirlo, usa Copiar enlace.</p>';
     $("capaReproductor").classList.remove("oculto");
-    prepararEnlacesExternos(item.id, miToken);
+    prepararEnlaceCopiar(item.id, miToken);
 
     function intentar(numero) {
       if (miToken !== tokenReproductor) return;
@@ -5158,22 +5163,25 @@ GMM.app = (function () {
     intentar(0);
   }
 
-  /* Firefox solo entrega un protocolo externo a Windows cuando el usuario
-     pulsa un enlace DIRECTO. Por eso preparamos dos enlaces temporales al
-     abrir el modal: uno exclusivo para VLC y otro para Copiar enlace. */
-  function prepararEnlacesExternos(id, token) {
-    Promise.all([GMM.servidor.enlaceOriginal(id), GMM.servidor.enlaceOriginal(id)]).then(function (urls) {
+  /* Copiar enlace sigue usando un ticket temporal independiente. Abrir en VLC
+     ya no depende de protocolos del navegador: GMM Server abre VLC localmente. */
+  function prepararEnlaceCopiar(id, token) {
+    GMM.servidor.enlaceOriginal(id).then(function (url) {
       if (token !== tokenReproductor) return;
-      var vlc = $("cuerpoReproductor").querySelector("[data-gmm-vlc]");
       var copiar = $("cuerpoReproductor").querySelector("[data-gmm-copiar]");
-      if (!vlc || !copiar) return;
-      vlc.href = "gmm-vlc://abrir?url=" + encodeURIComponent(urls[0]);
-      vlc.removeAttribute("aria-disabled");
-      vlc.innerHTML = "&#9654; Abrir en VLC";
-      copiar.setAttribute("data-gmm-copiar-url", urls[1]);
+      if (!copiar) return;
+      copiar.setAttribute("data-gmm-copiar-url", url);
       copiar.disabled = false;
     }).catch(function (error) {
       if (token === tokenReproductor) GMM.ui.aviso(textoErrorServidor(error), "error");
+    });
+  }
+
+  function abrirEnVlc(id) {
+    GMM.servidor.abrirVlc(id).then(function () {
+      GMM.ui.aviso("Película abierta en VLC", "ok");
+    }).catch(function (error) {
+      GMM.ui.aviso(error.message === "HTTP_409" ? "No encuentro VLC instalado en la PC de GMM Server." : textoErrorServidor(error), "error");
     });
   }
 
@@ -6097,11 +6105,7 @@ GMM.app = (function () {
        su propio delegado para el botón "abrir en otro reproductor" --- */
     $("cuerpoReproductor").addEventListener("click", function (e) {
       var nodo = e.target.closest("[data-gmm-vlc]");
-      if (nodo) {
-        if (!nodo.getAttribute("href")) e.preventDefault();
-        else GMM.ui.aviso("Abriendo la película en VLC…", "ok");
-        return;
-      }
+      if (nodo) { abrirEnVlc(nodo.getAttribute("data-gmm-vlc")); return; }
       nodo = e.target.closest("[data-gmm-copiar]");
       if (nodo) copiarEnlaceReproductor(nodo.getAttribute("data-gmm-copiar-url"));
     });

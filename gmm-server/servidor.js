@@ -7,6 +7,7 @@ const { GestorCatalogo } = require("./src/catalogo");
 const { crearServidorApi, VERSION_SERVIDOR } = require("./src/api");
 const { GestorTranscodificacion } = require("./src/transcodificar");
 const { GestorJellyfin } = require("./src/jellyfin");
+const { LanzadorVlc } = require("./src/vlc");
 
 function direccionesAlcanzables(host, puerto) {
   if (host !== "0.0.0.0") return [`http://${host}:${puerto}`];
@@ -37,7 +38,7 @@ async function iniciar() {
   const transcodificador = configuracion.jellyfin.activo
     ? null
     : new GestorTranscodificacion(configuracion, { registro: console });
-  const servidor = crearServidorApi(configuracion, gestor, console, transcodificador);
+  const servidor = crearServidorApi(configuracion, gestor, console, transcodificador, new LanzadorVlc());
   servidor.listen(configuracion.puerto, configuracion.host, function () {
     console.log(`GMM Server ${VERSION_SERVIDOR} está funcionando.`);
     direccionesAlcanzables(configuracion.host, configuracion.puerto).forEach(function (direccion) {

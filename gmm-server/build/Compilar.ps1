@@ -80,6 +80,7 @@ $motor = @{
     '%LOCALAPPDATA%\GMM-Server\motor\src\jellyfin.js'                = Join-Path $raizProyecto "src\jellyfin.js"
     '%LOCALAPPDATA%\GMM-Server\motor\src\nombres.js'                  = Join-Path $raizProyecto "src\nombres.js"
     '%LOCALAPPDATA%\GMM-Server\motor\src\transcodificar.js'           = Join-Path $raizProyecto "src\transcodificar.js"
+    '%LOCALAPPDATA%\GMM-Server\motor\src\vlc.js'                     = Join-Path $raizProyecto "src\vlc.js"
 }
 Invoke-ps2exe `
     -inputFile (Join-Path $raizProyecto "GMM-Server-Panel.ps1") `

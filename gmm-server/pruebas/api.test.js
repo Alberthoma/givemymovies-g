@@ -70,6 +70,38 @@ test("protege catálogo y escaneo con la clave", async function (t) {
   assert.equal(escaneo.status, 200);
 });
 
+test("abre una película en el VLC del equipo que ejecuta GMM Server", async function (t) {
+  let enlaceAbierto = null;
+  const gestor = {
+    obtenerPublico: catalogoDePrueba,
+    escanearConfirmando: async function () { return catalogoDePrueba(); },
+    obtenerArchivo: function (id) { return id === "abc" ? { id: "abc", disponible: true } : null; }
+  };
+  const configuracion = {
+    puerto: 7399,
+    nombreServidor: "GMM de prueba",
+    claveAdministracion: "secreto-de-prueba-12345678901234567890",
+    origenesPermitidos: ["https://alberthoma.github.io"],
+    duracionEnlaceMinutos: 10
+  };
+  const lanzador = {
+    disponible: function () { return true; },
+    abrir: function (url) { enlaceAbierto = url; }
+  };
+  const servidor = crearServidorApi(configuracion, gestor, { error: function () {} }, null, lanzador);
+  servidor.listen(0, "127.0.0.1");
+  await once(servidor, "listening");
+  t.after(function () { servidor.close(); });
+  const base = `http://127.0.0.1:${servidor.address().port}`;
+  const respuesta = await fetch(`${base}/api/vlc/abc`, {
+    method: "POST",
+    headers: { Authorization: "Bearer secreto-de-prueba-12345678901234567890" }
+  });
+  assert.equal(respuesta.status, 200);
+  assert.equal((await respuesta.json()).abierto, true);
+  assert.match(enlaceAbierto, /^http:\/\/127\.0\.0\.1:7399\/_gmm\/medio\//);
+});
+
 test("acepta el origen de GMM y rechaza otros", async function (t) {
   const base = await levantar(t);
   const permitida = await fetch(`${base}/api/salud`, {

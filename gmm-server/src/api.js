@@ -180,7 +180,7 @@ function autorizado(solicitud, configuracion) {
   return secretosIguales(clave, configuracion.claveAdministracion);
 }
 
-function crearServidorApi(configuracion, gestorCatalogo, registro, gestorTranscodificacion) {
+function crearServidorApi(configuracion, gestorCatalogo, registro, gestorTranscodificacion, lanzadorVlc) {
   const log = registro || console;
   const tickets = crearTickets(configuracion);
   return http.createServer(async function (solicitud, respuesta) {
@@ -221,7 +221,7 @@ function crearServidorApi(configuracion, gestorCatalogo, registro, gestorTransco
         return;
       }
       if (url.pathname === "/api/catalogo" || url.pathname === "/api/escanear" ||
-          url.pathname.startsWith("/api/medios/")) {
+          url.pathname.startsWith("/api/medios/") || url.pathname.startsWith("/api/vlc/")) {
         if (!autorizado(solicitud, configuracion)) {
           responderJson(respuesta, 401, { error: "Acceso no autorizado" });
           return;
@@ -233,6 +233,23 @@ function crearServidorApi(configuracion, gestorCatalogo, registro, gestorTransco
       }
       if (solicitud.method === "POST" && url.pathname === "/api/escanear") {
         responderJson(respuesta, 200, await gestorCatalogo.escanearConfirmando());
+        return;
+      }
+      if (solicitud.method === "POST" && url.pathname.startsWith("/api/vlc/")) {
+        const id = decodeURIComponent(url.pathname.slice("/api/vlc/".length));
+        const pelicula = gestorCatalogo.obtenerArchivo && gestorCatalogo.obtenerArchivo(id);
+        if (!pelicula) {
+          responderJson(respuesta, 404, { error: "Película no disponible" });
+          return;
+        }
+        if (!lanzadorVlc || !lanzadorVlc.disponible()) {
+          responderJson(respuesta, 409, { error: "VLC_NO_INSTALADO" });
+          return;
+        }
+        const ticket = tickets.emitir(id, false, false, true);
+        const enlaceLocal = `http://127.0.0.1:${configuracion.puerto}/_gmm/medio/${ticket.token}`;
+        lanzadorVlc.abrir(enlaceLocal);
+        responderJson(respuesta, 200, { abierto: true });
         return;
       }
       if (solicitud.method === "GET" && url.pathname.startsWith("/api/medios/")) {
