@@ -4733,7 +4733,7 @@ GMM.app = (function () {
       var hayAmbas = fac.dirige.length && fac.interpreta.length;
       function rejilla(lista) {
         return '<div class="rejilla">' +
-          lista.map(function (p) { return GMM.ui.tarjeta(p, huecoDisponibilidad(p)); }).join("") +
+          lista.map(function (p) { return tarjetaConServidor(p, huecoDisponibilidad(p)); }).join("") +
           '</div>';
       }
       /* Las dos facetas viven dentro de un mismo contenedor #rejillaFilmografia
@@ -4887,7 +4887,7 @@ GMM.app = (function () {
     var html = '<div class="seccion-cab"><h3 class="seccion-tit">' + GMM.util.esc(titulo) +
                (subtitulo ? ' <small>' + GMM.util.esc(subtitulo) + '</small>' : "") + '</h3></div>' +
                (pager ? paginadorHtml(pager) : "") +
-               '<div class="rejilla">' + pelis.map(function (p) { return GMM.ui.tarjeta(p); }).join("") + '</div>' +
+               '<div class="rejilla">' + pelis.map(function (p) { return tarjetaConServidor(p); }).join("") + '</div>' +
                (pager ? paginadorHtml(pager) : "");
     $("resultados").innerHTML = html;
     estado.vista = "rejilla";
@@ -4926,7 +4926,7 @@ GMM.app = (function () {
         '</div>' +
       '</div>';
       html += '<div class="rejilla" style="margin-bottom:34px">' +
-              pendientes.map(function (p) { return GMM.ui.tarjeta(p, huecoDisponibilidad(p)); }).join("") +
+              pendientes.map(function (p) { return tarjetaConServidor(p, huecoDisponibilidad(p)); }).join("") +
               '</div>';
     }
 
@@ -4936,7 +4936,7 @@ GMM.app = (function () {
         '<button class="boton-sec peligro" data-vaciar="favoritas">Vaciar</button>' +
       '</div>';
       html += '<div class="rejilla">' +
-              favoritas.map(function (p) { return GMM.ui.tarjeta(p, huecoDisponibilidad(p)); }).join("") +
+              favoritas.map(function (p) { return tarjetaConServidor(p, huecoDisponibilidad(p)); }).join("") +
               '</div>';
     }
 
@@ -4976,7 +4976,7 @@ GMM.app = (function () {
       '</div>' +
       '<p class="estado-txt" style="margin:-6px 0 18px">Tus copias guardadas. &#9654; reproduce y &#11015; descarga, cada una en una pesta&ntilde;a nueva. Toca la car&aacute;tula para ver la ficha.</p>' +
       '<div class="rejilla">' +
-        items.map(function (p) { return GMM.ui.tarjeta(p, copiaHtml(p)); }).join("") +
+        items.map(function (p) { return tarjetaConServidor(p, copiaHtml(p)); }).join("") +
       '</div>';
 
     $("resultados").innerHTML = html;
@@ -5205,13 +5205,17 @@ GMM.app = (function () {
     estado.servidorIndice = { porId: porId, porTitulo: porTitulo };
   }
 
-  /* Busca una sugerencia (resultado de TMDB) en el catálogo ya indexado.
-     Solo aplica a título de película: el catálogo de GMM Server hoy solo
-     guarda películas, y buscar por actor/trama no trae un título concreto
-     con el que emparejar. Devuelve la entrada del catálogo, o null. */
+  /* Busca cualquier ficha de TMDB en el catálogo ya indexado. Antes esta
+     comprobación dependía de que la vista activa fuera la búsqueda por título;
+     por eso una película aparecía como disponible en las sugerencias, pero no
+     en Tendencias, Ver más, Descubrir, listas o filmografías. El catálogo de
+     GMM Server por ahora contiene películas, así que las series se omiten. */
   function buscarEnServidor(item) {
-    if (estado.tipo !== "movie" || estado.busquedaPor !== "titulo" || !estado.servidorIndice) return null;
-    var directo = estado.servidorIndice.porId[estado.tipo + ":" + item.id];
+    if (!item || !estado.servidorIndice) return null;
+    var tipoMedia = item.tipo || item.media_type || estado.tipo || "movie";
+    tipoMedia = tipoMedia === "tv" ? "tv" : "movie";
+    if (tipoMedia !== "movie") return null;
+    var directo = estado.servidorIndice.porId[tipoMedia + ":" + item.id];
     if (directo) return directo;
     var candidatos = estado.servidorIndice.porTitulo[GMM.util.normalizar(item.title || item.name || "")];
     if (!candidatos || !candidatos.length) return null;
@@ -5222,6 +5226,13 @@ GMM.app = (function () {
       if (!ano || !c.anioDetectado || String(c.anioDetectado) === String(ano)) elegido = c;
     });
     return elegido;
+  }
+
+  /* Una sola entrada para pintar tarjetas de TMDB: conserva cualquier pie que
+     ya tuviera la vista y añade los controles de GMM Server cuando corresponde. */
+  function tarjetaConServidor(item, extraHtml) {
+    var enServidor = buscarEnServidor(item);
+    return GMM.ui.tarjeta(item, extraHtml, enServidor ? iconosServidorHtml(enServidor) : "");
   }
 
   function pintarServidor() {
@@ -5713,7 +5724,7 @@ GMM.app = (function () {
             $("resultados").insertAdjacentHTML("beforeend",
               '<div class="seccion-cab" style="margin-top:34px">' +
                 '<h3 class="seccion-tit">¿Buscabas otra? <small>otras coincidencias</small></h3></div>' +
-              '<div class="rejilla">' + otras.map(function (p) { return GMM.ui.tarjeta(p); }).join("") + '</div>');
+              '<div class="rejilla">' + otras.map(function (p) { return tarjetaConServidor(p); }).join("") + '</div>');
           });
         }
         return abrirFicha(lista[0].id, estado.tipo);
@@ -6506,7 +6517,7 @@ GMM.app = (function () {
       cont.innerHTML = '<div class="carrusel-vacio">' + GMM.util.esc(vacioTxt) + '</div>';
       return;
     }
-    cont.innerHTML = items.map(function (p) { return GMM.ui.tarjeta(p); }).join("");
+    cont.innerHTML = items.map(function (p) { return tarjetaConServidor(p); }).join("");
     cont.scrollLeft = 0;
   }
 
@@ -6668,6 +6679,10 @@ GMM.app = (function () {
       GMM.servidor.catalogo().then(function (catalogo) {
         estado.catalogoServidor = catalogo;
         indexarCatalogoServidor(catalogo);
+        /* Los carruseles suelen terminar de pintarse antes que esta petición
+           privada. Se vuelven a pintar al recibir el índice para que los
+           iconos aparezcan sin exigir recargar la página. */
+        if (estado.vista === "inicio") refrescarCarrusel();
       }).catch(function () {});
     }
 
