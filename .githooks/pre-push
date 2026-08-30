@@ -1,0 +1,17 @@
+#!/bin/sh
+
+# Este proyecto solo se publica en givemymovies-g. Bloquea un push si alguien
+# cambia por error la URL del remoto local, incluso aunque la documentación
+# siga indicando el destino correcto.
+remote_url="$2"
+
+case "$remote_url" in
+  https://github.com/Alberthoma/givemymovies-g.git|https://github.com/Alberthoma/givemymovies-g|git@github.com:Alberthoma/givemymovies-g.git)
+    exit 0
+    ;;
+  *)
+    echo "PUBLICACION BLOQUEADA: destino incorrecto: $remote_url" >&2
+    echo "Destino permitido: https://github.com/Alberthoma/givemymovies-g.git" >&2
+    exit 1
+    ;;
+esac
