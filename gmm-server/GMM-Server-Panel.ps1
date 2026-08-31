@@ -214,6 +214,45 @@ function Buscar-Tailscale {
     return $null
 }
 
+function Probar-PuertoLocal([string]$hostPrueba, [int]$puertoPrueba) {
+    $cliente = New-Object System.Net.Sockets.TcpClient
+    try {
+        $conexion = $cliente.BeginConnect($hostPrueba, $puertoPrueba, $null, $null)
+        if (-not $conexion.AsyncWaitHandle.WaitOne(350, $false)) { return $false }
+        $cliente.EndConnect($conexion)
+        return $true
+    } catch { return $false } finally { $cliente.Close() }
+}
+
+function Jellyfin-Conectado {
+    if (-not $script:config -or -not $script:config.jellyfinUrl) { return $false }
+    try {
+        $uri = New-Object System.Uri([string]$script:config.jellyfinUrl)
+        $puertoJellyfin = if ($uri.IsDefaultPort) { if ($uri.Scheme -eq "https") { 443 } else { 80 } } else { $uri.Port }
+        return Probar-PuertoLocal $uri.Host $puertoJellyfin
+    } catch { return $false }
+}
+
+function Tailscale-Conectado {
+    $ts = Buscar-Tailscale
+    if (-not $ts) { return $false }
+    try {
+        $estadoTs = (& $ts status --json 2>$null) | ConvertFrom-Json
+        return $estadoTs.BackendState -eq "Running" -and [bool]$estadoTs.Self.Online
+    } catch { return $false }
+}
+
+function Buscar-Jellyfin {
+    $rutas = @(
+        (Join-Path $env:ProgramFiles "Jellyfin\Server\jellyfin-windows-tray\Jellyfin.Windows.Tray.exe"),
+        (Join-Path $env:ProgramFiles "Jellyfin\Server\jellyfin.exe")
+    )
+    foreach ($rutaJellyfin in $rutas) {
+        if ($rutaJellyfin -and (Test-Path -LiteralPath $rutaJellyfin)) { return $rutaJellyfin }
+    }
+    return $null
+}
+
 # Deja tu GMM Server accesible por HTTPS de verdad (candado, sin avisos del
 # navegador) dentro de tu red de Tailscale, con "tailscale serve": no toca
 # nada de GMM Server, es Tailscale el que hace de intermediario seguro entre
@@ -319,7 +358,7 @@ function Crear-ConfiguracionSiFalta {
 
 $forma = New-Object System.Windows.Forms.Form
 $forma.Text = "GMM Server"
-$forma.Size = New-Object System.Drawing.Size(560, 610)
+$forma.Size = New-Object System.Drawing.Size(560, 665)
 $forma.StartPosition = "CenterScreen"
 $forma.FormBorderStyle = "FixedDialog"
 $forma.MaximizeBox = $false
@@ -370,32 +409,55 @@ $botonAyuda.Add_Click({
         "Como empezar", "OK", "Information") | Out-Null
 })
 
+# Estado de los dos servicios externos que GMM necesita para reproducir y para
+# acceder desde fuera de casa. El punto verde/rojo evita tener que adivinar si
+# el fallo esta en GMM Server, Jellyfin o Tailscale.
+$etiquetaJellyfinEstado = New-Object System.Windows.Forms.Label
+$etiquetaJellyfinEstado.Text = "● Jellyfin desconectado"
+$etiquetaJellyfinEstado.ForeColor = [System.Drawing.Color]::Firebrick
+$etiquetaJellyfinEstado.Location = New-Object System.Drawing.Point(20, 96)
+$etiquetaJellyfinEstado.Size = New-Object System.Drawing.Size(175, 24)
+$forma.Controls.Add($etiquetaJellyfinEstado)
+
+$botonEncenderJellyfin = New-Object System.Windows.Forms.Button
+$botonEncenderJellyfin.Text = "Encender Jellyfin"
+$botonEncenderJellyfin.Location = New-Object System.Drawing.Point(195, 91)
+$botonEncenderJellyfin.Size = New-Object System.Drawing.Size(145, 28)
+$forma.Controls.Add($botonEncenderJellyfin)
+
+$etiquetaTailscaleEstado = New-Object System.Windows.Forms.Label
+$etiquetaTailscaleEstado.Text = "● Tailscale desconectado"
+$etiquetaTailscaleEstado.ForeColor = [System.Drawing.Color]::Firebrick
+$etiquetaTailscaleEstado.Location = New-Object System.Drawing.Point(350, 96)
+$etiquetaTailscaleEstado.Size = New-Object System.Drawing.Size(180, 24)
+$forma.Controls.Add($etiquetaTailscaleEstado)
+
 $etiquetaClaveTit = New-Object System.Windows.Forms.Label
 $etiquetaClaveTit.Text = "Clave de administracion:"
-$etiquetaClaveTit.Location = New-Object System.Drawing.Point(20, 95)
+$etiquetaClaveTit.Location = New-Object System.Drawing.Point(20, 135)
 $etiquetaClaveTit.Size = New-Object System.Drawing.Size(180, 20)
 $forma.Controls.Add($etiquetaClaveTit)
 
 $campoClave = New-Object System.Windows.Forms.TextBox
-$campoClave.Location = New-Object System.Drawing.Point(20, 117)
+$campoClave.Location = New-Object System.Drawing.Point(20, 157)
 $campoClave.Size = New-Object System.Drawing.Size(400, 22)
 $campoClave.ReadOnly = $true
 $forma.Controls.Add($campoClave)
 
 $botonCopiarClave = New-Object System.Windows.Forms.Button
 $botonCopiarClave.Text = "Copiar"
-$botonCopiarClave.Location = New-Object System.Drawing.Point(430, 116)
+$botonCopiarClave.Location = New-Object System.Drawing.Point(430, 156)
 $botonCopiarClave.Size = New-Object System.Drawing.Size(90, 24)
 $forma.Controls.Add($botonCopiarClave)
 
 $etiquetaCarpetas = New-Object System.Windows.Forms.Label
 $etiquetaCarpetas.Text = "Carpetas que escanea:"
-$etiquetaCarpetas.Location = New-Object System.Drawing.Point(20, 155)
+$etiquetaCarpetas.Location = New-Object System.Drawing.Point(20, 195)
 $etiquetaCarpetas.Size = New-Object System.Drawing.Size(300, 20)
 $forma.Controls.Add($etiquetaCarpetas)
 
 $listaCarpetas = New-Object System.Windows.Forms.ListView
-$listaCarpetas.Location = New-Object System.Drawing.Point(20, 178)
+$listaCarpetas.Location = New-Object System.Drawing.Point(20, 218)
 $listaCarpetas.Size = New-Object System.Drawing.Size(500, 110)
 $listaCarpetas.View = "Details"
 $listaCarpetas.FullRowSelect = $true
@@ -405,49 +467,49 @@ $forma.Controls.Add($listaCarpetas)
 
 $botonAnadirCarpeta = New-Object System.Windows.Forms.Button
 $botonAnadirCarpeta.Text = "Anadir carpeta..."
-$botonAnadirCarpeta.Location = New-Object System.Drawing.Point(20, 296)
+$botonAnadirCarpeta.Location = New-Object System.Drawing.Point(20, 336)
 $botonAnadirCarpeta.Size = New-Object System.Drawing.Size(160, 30)
 $forma.Controls.Add($botonAnadirCarpeta)
 
 $botonQuitarCarpeta = New-Object System.Windows.Forms.Button
 $botonQuitarCarpeta.Text = "Quitar carpeta"
-$botonQuitarCarpeta.Location = New-Object System.Drawing.Point(190, 296)
+$botonQuitarCarpeta.Location = New-Object System.Drawing.Point(190, 336)
 $botonQuitarCarpeta.Size = New-Object System.Drawing.Size(160, 30)
 $forma.Controls.Add($botonQuitarCarpeta)
 
 # ---- Acceso remoto seguro (HTTPS via Tailscale) ----
 $etiquetaHttpsTit = New-Object System.Windows.Forms.Label
 $etiquetaHttpsTit.Text = "Acceso remoto seguro (para el movil, fuera de casa):"
-$etiquetaHttpsTit.Location = New-Object System.Drawing.Point(20, 336)
+$etiquetaHttpsTit.Location = New-Object System.Drawing.Point(20, 376)
 $etiquetaHttpsTit.Size = New-Object System.Drawing.Size(470, 20)
 $forma.Controls.Add($etiquetaHttpsTit)
 
 $botonActivarHttps = New-Object System.Windows.Forms.Button
 $botonActivarHttps.Text = "Activar HTTPS con Tailscale"
-$botonActivarHttps.Location = New-Object System.Drawing.Point(20, 358)
+$botonActivarHttps.Location = New-Object System.Drawing.Point(20, 398)
 $botonActivarHttps.Size = New-Object System.Drawing.Size(220, 30)
 $forma.Controls.Add($botonActivarHttps)
 
 $campoHttps = New-Object System.Windows.Forms.TextBox
-$campoHttps.Location = New-Object System.Drawing.Point(20, 394)
+$campoHttps.Location = New-Object System.Drawing.Point(20, 434)
 $campoHttps.Size = New-Object System.Drawing.Size(400, 22)
 $campoHttps.ReadOnly = $true
 $forma.Controls.Add($campoHttps)
 
 $botonCopiarHttps = New-Object System.Windows.Forms.Button
 $botonCopiarHttps.Text = "Copiar"
-$botonCopiarHttps.Location = New-Object System.Drawing.Point(430, 393)
+$botonCopiarHttps.Location = New-Object System.Drawing.Point(430, 433)
 $botonCopiarHttps.Size = New-Object System.Drawing.Size(90, 24)
 $forma.Controls.Add($botonCopiarHttps)
 
 $etiquetaRegistro = New-Object System.Windows.Forms.Label
 $etiquetaRegistro.Text = "Actividad:"
-$etiquetaRegistro.Location = New-Object System.Drawing.Point(20, 428)
+$etiquetaRegistro.Location = New-Object System.Drawing.Point(20, 468)
 $etiquetaRegistro.Size = New-Object System.Drawing.Size(200, 20)
 $forma.Controls.Add($etiquetaRegistro)
 
 $cajaRegistro = New-Object System.Windows.Forms.TextBox
-$cajaRegistro.Location = New-Object System.Drawing.Point(20, 450)
+$cajaRegistro.Location = New-Object System.Drawing.Point(20, 490)
 $cajaRegistro.Size = New-Object System.Drawing.Size(500, 100)
 $cajaRegistro.Multiline = $true
 $cajaRegistro.ReadOnly = $true
@@ -522,12 +584,33 @@ function Refrescar-Interfaz {
     $botonQuitarCarpeta.Enabled = -not $encendido
 }
 
+function Refrescar-ServiciosExternos {
+    $jellyfinOk = Jellyfin-Conectado
+    $etiquetaJellyfinEstado.Text = if ($jellyfinOk) { "● Jellyfin conectado" } else { "● Jellyfin desconectado" }
+    $etiquetaJellyfinEstado.ForeColor = if ($jellyfinOk) { [System.Drawing.Color]::SeaGreen } else { [System.Drawing.Color]::Firebrick }
+    $botonEncenderJellyfin.Text = if ($jellyfinOk) { "Jellyfin encendido" } else { "Encender Jellyfin" }
+    $botonEncenderJellyfin.Enabled = -not $jellyfinOk
+
+    $tailscaleOk = Tailscale-Conectado
+    $etiquetaTailscaleEstado.Text = if ($tailscaleOk) { "● Tailscale conectado" } else { "● Tailscale desconectado" }
+    $etiquetaTailscaleEstado.ForeColor = if ($tailscaleOk) { [System.Drawing.Color]::SeaGreen } else { [System.Drawing.Color]::Firebrick }
+}
+
 # ------------------------------------------------------------------
 # Iniciar / detener el servidor
 # ------------------------------------------------------------------
 
 function Iniciar-Servidor {
     if ($null -ne $script:proceso -and -not $script:proceso.HasExited) { return }
+
+    if ($script:config.jellyfinUrl -and -not (Jellyfin-Conectado)) {
+        Refrescar-ServiciosExternos
+        Escribir-Registro "No se puede iniciar: Jellyfin esta desconectado. Pulsa Encender Jellyfin y espera a que el indicador se ponga verde."
+        [System.Windows.Forms.MessageBox]::Show(
+            "Jellyfin esta desconectado. Pulsa Encender Jellyfin, espera a que el indicador se ponga verde y vuelve a iniciar el servidor.",
+            "GMM Server", "OK", "Warning") | Out-Null
+        return
+    }
 
     $info = New-Object System.Diagnostics.ProcessStartInfo
     $info.FileName = "node.exe"
@@ -612,6 +695,23 @@ $botonIniciar.Add_Click({
         Detener-Servidor
     } else {
         Iniciar-Servidor
+    }
+})
+
+$botonEncenderJellyfin.Add_Click({
+    $rutaJellyfin = Buscar-Jellyfin
+    if (-not $rutaJellyfin) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "No encuentro Jellyfin instalado. Abre GMM-Instalar.exe e instala Jellyfin Server.",
+            "GMM Server", "OK", "Warning") | Out-Null
+        return
+    }
+    try {
+        Start-Process -FilePath $rutaJellyfin
+        $botonEncenderJellyfin.Enabled = $false
+        Escribir-Registro "Encendiendo Jellyfin... el indicador se pondra verde cuando este listo."
+    } catch {
+        Escribir-Registro ("No se pudo encender Jellyfin: " + $_.Exception.Message)
     }
 })
 
@@ -754,8 +854,18 @@ try {
     $campoClave.Text = $script:config.claveAdministracion
     Refrescar-ListaCarpetas
     Refrescar-Interfaz
+    Refrescar-ServiciosExternos
+
+    $script:temporizadorServicios = New-Object System.Windows.Forms.Timer
+    $script:temporizadorServicios.Interval = 5000
+    $script:temporizadorServicios.Add_Tick({ Refrescar-ServiciosExternos })
+    $script:temporizadorServicios.Start()
 
     [System.Windows.Forms.Application]::Run($forma)
+    if ($script:temporizadorServicios) {
+        $script:temporizadorServicios.Stop()
+        $script:temporizadorServicios.Dispose()
+    }
     $iconoBandeja.Visible = $false
     $iconoBandeja.Dispose()
 } catch {

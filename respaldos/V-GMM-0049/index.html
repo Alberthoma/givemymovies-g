@@ -1311,7 +1311,7 @@ a.plataforma:hover { border-color: #2ee6a8; transform: translateY(-1px); text-de
   <footer class="pie">
     <span>givemymovies · datos de disponibilidad vía TMDB / JustWatch</span>
     <span>Tus listas se guardan en este navegador — inicia sesión para llevarlas a otros</span>
-    <span id="version-app">V GMM 0050</span>
+    <span id="version-app">V GMM 0049</span>
   </footer>
 </div>
 
@@ -4246,7 +4246,6 @@ GMM.app = (function () {
     servidorPorId: {},
     servidorIndice: null, // { porId, porTitulo } — para la insignia "Te la tengo" de las sugerencias
     entradasServidor: null,
-    busquedaServidor: "",
     marcada: -1,          // sugerencia resaltada con el teclado
     /* Método Descubrir */
     genero: "",           // id de género de TMDB
@@ -5310,41 +5309,6 @@ GMM.app = (function () {
     });
   }
 
-  function pintarCatalogoServidor(catalogo, entradas) {
-    var todas = entradas;
-    var textoLocal = GMM.util.normalizar(estado.busquedaServidor || "");
-    entradas = entradas.filter(function (entrada) {
-      var ficha = entrada.ficha || {};
-      var tituloLocal = [
-        ficha.title, ficha.original_title, ficha.name,
-        entrada.item.tituloDetectado, entrada.item.nombreArchivo
-      ].filter(Boolean).join(" ");
-      if (textoLocal && GMM.util.normalizar(tituloLocal).indexOf(textoLocal) === -1) return false;
-      var generos = (ficha.genre_ids || []).map(String);
-      if (ficha.genres) generos = generos.concat(ficha.genres.map(function (g) { return String(g.id); }));
-      if (estado.genero && !GMM.datos.esColeccion(estado.genero) && generos.indexOf(String(estado.genero)) === -1) return false;
-      if (estado.notaMin && Number(ficha.vote_average || 0) < Number(estado.notaMin)) return false;
-      var ano = Number(GMM.util.ano(ficha.release_date || ficha.first_air_date) || entrada.item.anioDetectado || 0);
-      if (estado.anoDesde && ano < Number(estado.anoDesde)) return false;
-      if (estado.anoHasta && ano > Number(estado.anoHasta)) return false;
-      return true;
-    });
-    var disponibles = catalogo.resumen && Number(catalogo.resumen.disponibles) || 0;
-    var copiandose = catalogo.resumen && Number(catalogo.resumen.copiandose) || 0;
-    var nota = disponibles + " disponible" + (disponibles === 1 ? "" : "s") +
-      (copiandose ? " · " + copiandose + " terminando de copiar" : "") + ".";
-    var html = '<div class="seccion-cab"><h3 class="seccion-tit">&#9654; Te la tengo <small>' +
-      entradas.length + (entradas.length !== todas.length ? ' de ' + todas.length : '') + '</small></h3>' +
-      '<button class="boton-sec" data-refrescar-servidor>&#8635; Actualizar</button></div>' +
-      '<p class="estado-txt" style="margin:-6px 0 18px">' + GMM.util.esc(nota) +
-      (textoLocal ? ' Buscando solo en tu biblioteca.' : '') +
-      (GMM.tmdb.hayClave() ? " Carátulas e información de TMDB." : " Añade tu clave de TMDB en ⚙ para carátulas e información completas.") +
-      '</p>';
-    html += entradas.length ? '<div class="rejilla">' + entradas.map(tarjetaServidor).join("") + '</div>' :
-      '<div class="estado"><div class="estado-tit">No hay títulos con esta búsqueda</div><p class="estado-txt">Prueba otro título o cambia los filtros activos.</p></div>';
-    $("resultados").innerHTML = html;
-  }
-
   function pintarServidor() {
     estado.vista = "servidor";
     estado.ctxPagina = null;
@@ -5371,7 +5335,31 @@ GMM.app = (function () {
           });
       return obtenerEntradas.then(function (entradas) {
         if (estado.vista !== "servidor") return;
-        pintarCatalogoServidor(catalogo, entradas);
+        var todas = entradas;
+        entradas = entradas.filter(function (entrada) {
+          var ficha = entrada.ficha || {};
+          var generos = (ficha.genre_ids || []).map(String);
+          if (ficha.genres) generos = generos.concat(ficha.genres.map(function (g) { return String(g.id); }));
+          if (estado.genero && !GMM.datos.esColeccion(estado.genero) && generos.indexOf(String(estado.genero)) === -1) return false;
+          if (estado.notaMin && Number(ficha.vote_average || 0) < Number(estado.notaMin)) return false;
+          var ano = Number(GMM.util.ano(ficha.release_date || ficha.first_air_date) || entrada.item.anioDetectado || 0);
+          if (estado.anoDesde && ano < Number(estado.anoDesde)) return false;
+          if (estado.anoHasta && ano > Number(estado.anoHasta)) return false;
+          return true;
+        });
+        var disponibles = catalogo.resumen && Number(catalogo.resumen.disponibles) || 0;
+        var copiandose = catalogo.resumen && Number(catalogo.resumen.copiandose) || 0;
+        var nota = disponibles + " disponible" + (disponibles === 1 ? "" : "s") +
+          (copiandose ? " · " + copiandose + " terminando de copiar" : "") + ".";
+        var html = '<div class="seccion-cab"><h3 class="seccion-tit">&#9654; Te la tengo <small>' +
+          entradas.length + (entradas.length !== todas.length ? ' de ' + todas.length : '') + '</small></h3>' +
+          '<button class="boton-sec" data-refrescar-servidor>&#8635; Actualizar</button></div>' +
+          '<p class="estado-txt" style="margin:-6px 0 18px">' + GMM.util.esc(nota) +
+          (GMM.tmdb.hayClave() ? " Carátulas e información de TMDB." : " Añade tu clave de TMDB en ⚙ para carátulas e información completas.") +
+          '</p>';
+        html += entradas.length ? '<div class="rejilla">' + entradas.map(tarjetaServidor).join("") + '</div>' :
+          '<div class="estado"><div class="estado-tit">No hay títulos con estos filtros</div><p class="estado-txt">Prueba a cambiar género, idioma, año o puntuación desde el botón de filtros.</p></div>';
+        $("resultados").innerHTML = html;
       });
     }).catch(function (error) {
       if (estado.vista !== "servidor") return;
@@ -6037,22 +6025,10 @@ GMM.app = (function () {
     /* --- entrada de texto --- */
     $("entrada").addEventListener("input", function () {
       $("btnLimpiar").classList.toggle("oculto", !this.value);
-      if (estado.vista === "servidor") {
-        estado.busquedaServidor = this.value.trim();
-        cerrarSugerencias();
-        if (estado.catalogoServidor && estado.entradasServidor) {
-          pintarCatalogoServidor(estado.catalogoServidor, estado.entradasServidor);
-        }
-        return;
-      }
       pedirSugerencias(this.value.trim());
     });
 
     $("entrada").addEventListener("keydown", function (e) {
-      if (estado.vista === "servidor" && e.key === "Enter") {
-        e.preventDefault();
-        return;
-      }
       /* Desde V GMM 0047 el modo título pinta tarjetas completas
          (GMM.ui.tarjeta: .tarjeta) en vez de las .sugerencia sencillas de
          antes; el modo actor sigue con .sugerencia. Los dos cuentan para la
@@ -6103,12 +6079,6 @@ GMM.app = (function () {
 
     $("btnLimpiar").addEventListener("click", function () {
       $("entrada").value = "";
-      if (estado.vista === "servidor") {
-        estado.busquedaServidor = "";
-        if (estado.catalogoServidor && estado.entradasServidor) {
-          pintarCatalogoServidor(estado.catalogoServidor, estado.entradasServidor);
-        }
-      }
       this.classList.add("oculto");
       cerrarSugerencias();
       $("entrada").focus();
@@ -6322,11 +6292,6 @@ GMM.app = (function () {
     });
 
     $("btnServidor").addEventListener("click", function () {
-      estado.busquedaServidor = "";
-      $("entrada").value = "";
-      $("entrada").placeholder = "Buscar solo en Te la tengo…";
-      $("btnLimpiar").classList.add("oculto");
-      cerrarSugerencias();
       pintarServidor();
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
@@ -6810,10 +6775,6 @@ GMM.app = (function () {
     estado.vista = "inicio";
     estado.ctxPagina = null;
     cerrarSugerencias();
-    estado.busquedaServidor = "";
-    $("entrada").value = "";
-    $("btnLimpiar").classList.add("oculto");
-    reflejar();
     GMM.ui.bienvenida();
     fijarPantalla();
     refrescarCarrusel();
